@@ -23,6 +23,7 @@ The dev preview (`packages/fuse/src/dev`) re-implements (2) in JavaScript for lo
 | `data-fuse-b="<target>=<sym> …"` | any element | Reactive bindings. `<target>` is `text` (sets `textContent`) or `attr:<name>` (sets attribute; `false`/`null`/`undefined` removes it, `true` sets it to `""`). |
 | `<fuse-await id="<id>">fallback</fuse-await>` | anywhere | Placeholder for a streamed (out-of-order) block. Styled `display:contents`. |
 | `<template data-fuse-r="<id>">html</template>` | end of `<body>` | Resolved content for placeholder `<id>`; the loader replaces the placeholder with the template content. `data-fuse-error` attribute marks a failed/timed-out block (fallback stays). |
+| `<template data-fuse-ready="<id>"></template>` | immediately after the corresponding resolved/error template | Completion marker. It must be written after the resolved template's closing tag. The loader waits for this marker before swapping while the document is loading. |
 
 Value encoding for `data-fuse-s-*` / `data-fuse-p-*` (`$meta[].type`):
 
@@ -46,7 +47,9 @@ export const b0 = (scope) => …;
 export const v0 = (scope) => { … };
 ```
 
-`scope = { sig: { [name]: Signal }, props: { [name]: value }, host: Element }`, where a `Signal` has a `.value` getter/setter. Setting `.value` schedules a re-evaluation of all `data-fuse-b` bindings inside that host (excluding nested hosts).
+`scope = { sig: { [name]: Signal }, props: { [name]: value }, host: Element }`, where a `Signal` has a `.value` getter/setter. Setting `.value` reevaluates all `data-fuse-b` bindings inside that host synchronously (excluding nested hosts). Events awaiting the same first module import share a single initialized scope.
+
+Streaming HTML can be split at any byte boundary. The opening `<template>` element is not evidence that its content has arrived. The loader consumes completion markers and swaps complete templates whose placeholders exist; completed nested blocks remain pending until an outer swap inserts their placeholders. After `DOMContentLoaded`, it can also consume unmarked templates from older runtimes.
 
 ---
 
@@ -99,7 +102,7 @@ export const v0 = (scope) => { … };
 * `StreamServlet` – Sling servlet for resource type `fuse/components/stream`, included in `customfooterlibs.html` via
   `<sly data-sly-resource="${'fuse-stream' @ resourceType='fuse/components/stream'}"/>`.
   Flushes the response, then repeatedly waits for the next completed future (`CompletableFuture.anyOf`, bounded by the global timeout) and for each:
-  sets the stream target in `StreamContext`, writes `<template data-fuse-r="<id>">`, includes the original resource (forced resource type, **no WCM decoration**), writes `</template>`, flushes.
-  Failed / timed-out entries emit `<template data-fuse-r="<id>" data-fuse-error></template>`.
+  sets the stream target in `StreamContext`, buffers an include of the original resource (forced resource type, **no WCM decoration**), writes the resolved template followed by `<template data-fuse-ready="<id>"></template>`, and flushes.
+  Failed / timed-out entries emit `<template data-fuse-r="<id>" data-fuse-error></template>` followed by the same completion marker.
 * `StreamContext` – plain Java object stored as a request attribute `dev.fuse.aem.runtime.StreamContext`.
-* `FuseExecutor` – OSGi service with a bounded thread pool. OSGi config `dev.fuse.aem.runtime.FuseExecutor`: `threads` (default 8), `timeoutMs` (default 5000).
+* `FuseExecutor` – OSGi service with a bounded thread pool. OSGi config `dev.fuse.aem.runtime.FuseExecutor`: `threads` (default 8), `timeoutMs` (default 5000), `queueSize` (default 1000). A saturated active pool returns an exceptionally completed future instead of running slow work on the request thread. Cancelling a future cancels its queued task or interrupts its worker. Suppliers must honor interruption and configure connection/read timeouts. Models used without an executor (for example, isolated tests) still have an inline fallback.

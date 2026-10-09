@@ -1,6 +1,10 @@
 package dev.fuse.aem.runtime;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadFactory;
@@ -25,8 +29,9 @@ import org.slf4j.LoggerFactory;
  *
  * <p>OSGi configuration PID: {@code dev.fuse.aem.runtime.FuseExecutor}.</p>
  *
- * <p>If the pool is saturated (queue full) or shut down, the supplier runs synchronously on the
- * calling thread so that returned futures always complete.</p>
+ * <p>If the active pool is saturated or shut down, the returned future fails immediately.
+ * Slow suppliers are never moved onto the HTTP thread under load. Cancellation interrupts the
+ * worker task; suppliers must still configure their own network timeouts.</p>
  */
 @Component(service = FuseExecutor.class, immediate = true)
 @Designate(ocd = FuseExecutor.Config.class)
@@ -61,7 +66,7 @@ public class FuseExecutor {
 
         /** @return queue size */
         @AttributeDefinition(name = "Queue size",
-                description = "Maximum number of queued tasks. When full, tasks run on the request thread.",
+                description = "Maximum number of queued tasks. When full, new tasks fail immediately.",
                 min = "1")
         int queueSize() default DEFAULT_QUEUE_SIZE;
     }
@@ -101,10 +106,10 @@ public class FuseExecutor {
         current.shutdown();
         try {
             if (!current.awaitTermination(2, TimeUnit.SECONDS)) {
-                current.shutdownNow();
+                cancelQueued(current);
             }
         } catch (InterruptedException e) {
-            current.shutdownNow();
+            cancelQueued(current);
             Thread.currentThread().interrupt();
         }
     }
@@ -119,13 +124,44 @@ public class FuseExecutor {
     public <T> CompletableFuture<T> supply(Supplier<T> supplier) {
         ThreadPoolExecutor current = pool;
         if (current != null) {
+            CompletableFuture<T> future = new CompletableFuture<>();
+            FutureTask<T> task = new FutureTask<T>(supplier::get) {
+                @Override
+                protected void done() {
+                    try {
+                        future.complete(get());
+                    } catch (CancellationException e) {
+                        future.cancel(false);
+                    } catch (ExecutionException e) {
+                        future.completeExceptionally(e.getCause());
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        future.completeExceptionally(e);
+                    }
+                }
+            };
+            future.whenComplete((result, failure) -> {
+                if (future.isCancelled()) {
+                    task.cancel(true);
+                    current.remove(task);
+                }
+            });
             try {
-                return CompletableFuture.supplyAsync(supplier, current);
+                current.execute(task);
             } catch (RejectedExecutionException e) {
-                LOG.debug("Fuse executor saturated or shut down, running task on caller thread");
+                future.completeExceptionally(e);
             }
+            return future;
         }
         return runInline(supplier);
+    }
+
+    private static void cancelQueued(ThreadPoolExecutor pool) {
+        for (Runnable task : pool.shutdownNow()) {
+            if (task instanceof Future<?>) {
+                ((Future<?>) task).cancel(true);
+            }
+        }
     }
 
     /**

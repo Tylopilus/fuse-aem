@@ -1,29 +1,46 @@
-# ⚡ Fuse: Qwik-Style Single-File Components for AEM as a Cloud Service
+# Fuse: TSX components for AEM
 
-**Fuse** is an AEM development framework that solves the fragmentation of modern Adobe Experience Manager (AEMaaCS) projects.
+**Fuse** is an experimental compiler for Adobe Experience Manager. It generates native HTL, Touch UI dialogs, Java Sling Models, CSS, and lazy client modules from restricted TSX component definitions.
 
-Instead of scattering component code across three disparate modules (`core` for Java Sling Models, `ui.apps` for HTL scripts and Touch UI XML dialogs, and `ui.frontend` for JS/CSS bundles), Fuse lets you author components in **single-file `.tsx` definitions** inspired by **Qwik v2**—featuring fine-grained lazy loading, resumability (zero hydration overhead), and native out-of-order chunked streaming.
+TSX co-locates markup, dialog fields, styles, and browser handlers. Business logic still lives in co-located Java files. The browser resumes primitive signal state from HTML attributes without rerunning the component function. This is inspired by Qwik; it implements a smaller authoring model.
+
+The local compiler, browser behavior, Java runtime, HTL syntax, and Maven packages have automated checks. A deployed AEM SDK and AEM Cloud delivery stack still need integration testing. Cloud streaming is experimental: servlet flushes do not guarantee progressive delivery through Dispatcher and the CDN.
+
+## Quick start
+
+Use Node.js 20 or later (22 recommended), JDK 21, and Maven 3.9 or later.
+
+```bash
+npm ci
+npm run build
+npm run dev -w @acme/acme-site
+```
+
+The preview is available at `http://localhost:3000`. Restart it after source changes; automatic rebuild and reload are not implemented.
 
 ---
 
-## 🚀 Key Highlights & Guarantees
+## Capabilities and limits
 
 1. **Zero Node.js in Production:**
    - Production AEM instances run **100% native AEM artifacts**: HTL templates, Granite/Coral Touch UI dialogs, Sling Models, and standard ClientLibraries.
    - No Node.js SSR sidecar or reverse proxy required.
-2. **Resumable & Lazy Client Runtime (~2 KB):**
-   - No hydration waterfalls. Event handlers (`onClick$`) are extracted into standalone hash-named micro-chunks and loaded **only when interacted with**.
-   - Signals (`useSignal`) update bound DOM nodes directly via fine-grained attribute bindings (`data-fuse-b`).
-3. **Out-of-Order Streaming on AEMaaCS:**
+2. **Lazy client modules:**
+   - Handlers, bindings, and visible tasks are bundled into one hash-named ES module per component. It loads on the first handled event or visible task.
+   - Signal changes update text and attribute bindings within that component. All its bindings are reevaluated on each change.
+3. **Experimental out-of-order streaming:**
    - Long-running async data fetches (e.g. external APIs, stock tickers, commerce catalogs) wrap in `<Await value={model.promise} fallback={...}>`.
-   - The initial HTL response immediately streams placeholders (`<fuse-await id="fz-1">`).
-   - Background tasks executed by `FuseExecutor` resolve concurrently and flush `<template data-fuse-r="fz-1">` chunks over HTTP chunked transfer encoding, swapped into the DOM seamlessly by `fuse-loader.js`.
+   - The page head must arm streaming with `PageStream`, and its footer must include `StreamServlet`. The example page component supplies both hooks.
+   - Background tasks resolve concurrently. The request thread flushes resolved templates and completion markers; the browser swaps only fully received blocks.
+   - Edit mode and `?fuse-stream=off` use blocking rendering. The executor fails new work when its queue is full; cancelled worker tasks are interrupted. External clients must configure their own timeouts.
 4. **Co-located Java Models & Touch UI Dialogs:**
    - Dialog schemas (`dialog({ fields: ... })`) generate standard Granite UI Coral XML dialogs.
    - Generated typed Java `*Props.java` classes adapt from `SlingHttpServletRequest` and `Resource`.
    - Co-located Java business models (e.g. `StockTickerModel.java`) extend `*Props` and compile into the OSGi bundle.
-5. **Blazing Fast Local Dev Preview:**
-   - Run `fuse dev` for a sub-second inner loop powered by `@adobe/htlengine` that renders actual compiled HTL against mock data and simulates streaming latency without waiting for an AEM SDK restart.
+5. **Local dev preview:**
+   - `fuse dev` renders generated HTL using `@adobe/htlengine` and JavaScript mocks. It does not run Java, OSGi services, the authoring editor, or Dispatcher.
+
+Component bodies support hook declarations and one JSX return. Server expressions must fit HTL: arithmetic and arbitrary function calls belong in Java getters. Lists are server rendered; changing a signal cannot add or remove list items. Signal conditionals toggle `hidden` on pre-rendered elements. Partials are server only, `<Await>` cannot appear in a loop, and client code cannot capture an awaited value or an entire multifield. Fallback and conditional signal expressions must have a consistent primitive type.
 
 ---
 
@@ -121,7 +138,7 @@ export default component$<typeof schema>(({ props }) => {
   );
 });
 ```
-*Note: Event listeners (`onClick$`) are bundled into separate hash-named JS chunks and lazy-loaded only on click. Initial count is rendered directly into HTML on the server.*
+*Handlers share a hash-named module for this component. Its initial count is rendered into HTML on the server.*
 
 ### 3. Out-of-Order Streaming with Co-located Java Model (`stock-ticker.tsx`)
 ```tsx
@@ -174,10 +191,13 @@ import java.util.concurrent.CompletableFuture;
 public class StockTickerModel extends StockTickerProps {
 
     public CompletableFuture<StockQuote> getQuotes() {
-        return async("quotes", () -> fetchLiveQuote(getSymbol()));
+        String symbol = getSymbol(); // Read model properties on the request thread.
+        return async("quotes", () -> fetchLiveQuote(symbol));
     }
 }
 ```
+
+`StockQuote` and `fetchLiveQuote` above represent your API client. The runnable example in `examples/acme-site` uses a simulated quote and reads its symbol before starting the worker task. Worker tasks must not use the request's ResourceResolver.
 
 ---
 
@@ -216,6 +236,8 @@ Run TypeScript compiler and test suites:
 ```bash
 npm run build
 npm test
+npx playwright install chromium --only-shell
+npm run test:browser
 ```
 
 Run Java OSGi runtime test suite:
@@ -223,22 +245,20 @@ Run Java OSGi runtime test suite:
 cd java/fuse-runtime
 mvn test
 ```
-*(35 unit tests covering `StreamContext`, `Await`, `FuseModel`, `StreamServlet`, and `FuseExecutor`).*
+The Java suite covers `StreamContext`, `Await`, `FuseModel`, `StreamServlet`, and `FuseExecutor`. Browser regressions cover split template delivery, concurrent first interactions, numeric state, nested streams, and failed blocks.
 
 ---
 
-## 🚢 Production Deployment to AEM as a Cloud Service
+## Build AEM artifacts
 
-1. **Add `fuse-runtime` dependency to `all/pom.xml` and `core/pom.xml`:**
-```xml
-<dependency>
-    <groupId>dev.fuse.aem</groupId>
-    <artifactId>fuse-runtime</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
-</dependency>
-```
-2. **Run Maven build:**
+From the repository root:
+
 ```bash
-mvn clean install -PautoInstallSinglePackage
+npm run build
+npm run build -w @acme/acme-site
+mvn clean verify
 ```
-3. Cloud Manager deploys the standard `.zip` packages to AEMaaCS. No custom Node.js buildpack or runtime is required.
+
+The reactor builds the runtime and example OSGi bundles, validates HTL and FileVault packages, and creates `examples/acme-site/all/target/acme-site.all-1.0.0-SNAPSHOT.zip`. The container embeds both bundles and the immutable `ui.apps` package. The structure package is used for validation and excluded from Cloud Manager deployment.
+
+Use `acme/components/page` as the resource type of a page template to enable the client libraries and stream hooks. The example does not install site content, editable templates, or policies. Integrate the generated components into your existing site and its Dispatcher project. See [AEM integration and verification](docs/aem-integration.md) for package installation and the remaining deployment checks.

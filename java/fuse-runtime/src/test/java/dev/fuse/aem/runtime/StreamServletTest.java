@@ -68,8 +68,8 @@ class StreamServletTest {
         });
 
         assertEquals(List.of(
-                "<template data-fuse-r=\"fz-2\"><p>F</p></template>",
-                "<template data-fuse-r=\"fz-1\"><p>S</p></template>"), sink.chunks);
+                "<template data-fuse-r=\"fz-2\"><p>F</p></template><template data-fuse-ready=\"fz-2\"></template>",
+                "<template data-fuse-r=\"fz-1\"><p>S</p></template><template data-fuse-ready=\"fz-1\"></template>"), sink.chunks);
         assertTrue(sink.flushes >= 3, "initial flush + one per chunk");
         assertTrue(ctx.isClosed());
         assertFalse(ctx.isArmed());
@@ -93,9 +93,9 @@ class StreamServletTest {
         });
 
         assertEquals(List.of(
-                "<template data-fuse-r=\"fz-1\" data-fuse-error></template>",
-                "<template data-fuse-r=\"fz-2\" data-fuse-error></template>",
-                "<template data-fuse-r=\"fz-3\">y</template>"), sink.chunks);
+                "<template data-fuse-r=\"fz-1\" data-fuse-error></template><template data-fuse-ready=\"fz-1\"></template>",
+                "<template data-fuse-r=\"fz-2\" data-fuse-error></template><template data-fuse-ready=\"fz-2\"></template>",
+                "<template data-fuse-r=\"fz-3\">y</template><template data-fuse-ready=\"fz-3\"></template>"), sink.chunks);
     }
 
     @Test
@@ -110,8 +110,8 @@ class StreamServletTest {
         StreamServlet.stream(ctx, deadline(100), sink, (entry, value) -> String.valueOf(value));
         long tookMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
 
-        assertEquals("<template data-fuse-r=\"fz-2\">ok</template>", sink.chunks.get(0));
-        assertEquals("<template data-fuse-r=\"fz-1\" data-fuse-error></template>", sink.chunks.get(1));
+        assertEquals("<template data-fuse-r=\"fz-2\">ok</template><template data-fuse-ready=\"fz-2\"></template>", sink.chunks.get(0));
+        assertEquals("<template data-fuse-r=\"fz-1\" data-fuse-error></template><template data-fuse-ready=\"fz-1\"></template>", sink.chunks.get(1));
         assertTrue(never.isCancelled());
         assertTrue(tookMs < 1500, "bounded by the deadline");
     }
@@ -137,8 +137,8 @@ class StreamServletTest {
         });
 
         assertEquals(List.of(
-                "<template data-fuse-r=\"fz-1\"><fuse-await id=\"fz-2\">…</fuse-await></template>",
-                "<template data-fuse-r=\"fz-2\">inner</template>"), sink.chunks);
+                "<template data-fuse-r=\"fz-1\"><fuse-await id=\"fz-2\">…</fuse-await></template><template data-fuse-ready=\"fz-1\"></template>",
+                "<template data-fuse-r=\"fz-2\">inner</template><template data-fuse-ready=\"fz-2\"></template>"), sink.chunks);
     }
 
     @Test

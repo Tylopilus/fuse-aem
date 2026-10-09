@@ -1,6 +1,6 @@
 "use strict";
 (() => {
-  // packages/fuse/src/client/fuse-loader.ts
+  // ../../packages/fuse/src/client/fuse-loader.ts
   var hostScopes = /* @__PURE__ */ new WeakMap();
   var chunkModules = /* @__PURE__ */ new Map();
   function loadChunk(url) {
@@ -42,6 +42,8 @@
     const chunkUrl = host.getAttribute("data-fuse-c");
     if (!chunkUrl) throw new Error("Element is not a Fuse host");
     const mod = await loadChunk(chunkUrl);
+    scope = hostScopes.get(host);
+    if (scope) return scope;
     const meta = mod.$meta || { signals: [], props: [] };
     const sigs = {};
     const props = {};
@@ -219,43 +221,42 @@
   }
   function swapAwaitBlock(template) {
     const id = template.getAttribute("data-fuse-r");
-    if (!id) return;
+    if (!id) return false;
     const isError = template.hasAttribute("data-fuse-error");
     const placeholder = document.getElementById(id);
-    if (placeholder && placeholder.tagName.toLowerCase() === "fuse-await") {
-      if (isError) {
-        console.warn(`[fuse] Stream block #${id} failed or timed out`);
-        placeholder.setAttribute("data-fuse-failed", "");
-      } else {
-        const content = template.content;
-        placeholder.parentNode?.replaceChild(content, placeholder);
-      }
+    if (!placeholder || placeholder.tagName.toLowerCase() !== "fuse-await") return false;
+    if (isError) {
+      console.warn(`[fuse] Stream block #${id} failed or timed out`);
+      placeholder.setAttribute("data-fuse-failed", "");
+    } else {
+      placeholder.replaceWith(template.content);
     }
     template.remove();
+    return true;
   }
   function setupStreamingSwap() {
+    const completed = /* @__PURE__ */ new Set();
     const processTemplates = () => {
-      const templates = document.querySelectorAll("template[data-fuse-r]");
-      for (const t of templates) {
-        swapAwaitBlock(t);
+      for (const marker of document.querySelectorAll("template[data-fuse-ready]")) {
+        const id = marker.getAttribute("data-fuse-ready");
+        if (id) completed.add(id);
+        marker.remove();
       }
-    };
-    processTemplates();
-    const mo = new MutationObserver((mutations) => {
-      for (const m of mutations) {
-        for (const node of m.addedNodes) {
-          if (node instanceof HTMLTemplateElement && node.hasAttribute("data-fuse-r")) {
-            swapAwaitBlock(node);
-          } else if (node instanceof HTMLElement) {
-            const tpls = node.querySelectorAll("template[data-fuse-r]");
-            for (const t of tpls) {
-              swapAwaitBlock(t);
-            }
+      let changed;
+      do {
+        changed = false;
+        for (const template of document.querySelectorAll("template[data-fuse-r]")) {
+          const id = template.getAttribute("data-fuse-r");
+          if ((completed.has(id) || document.readyState !== "loading") && swapAwaitBlock(template)) {
+            completed.delete(id);
+            changed = true;
           }
         }
-      }
-    });
+      } while (changed);
+    };
+    const mo = new MutationObserver(processTemplates);
     mo.observe(document.documentElement, { childList: true, subtree: true });
+    processTemplates();
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", processTemplates);
     }

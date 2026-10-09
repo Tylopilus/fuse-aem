@@ -163,6 +163,7 @@ public class Await {
         try {
             return future.get(timeoutMs, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
+            future.cancel(true);
             LOG.warn("Awaited value timed out");
             return null;
         } catch (ExecutionException e) {

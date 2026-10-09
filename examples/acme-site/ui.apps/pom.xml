@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.acme</groupId><artifactId>acme-site</artifactId><version>1.0.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>acme-site.ui.apps</artifactId>
+    <packaging>content-package</packaging>
+    <dependencies>
+        <dependency>
+            <groupId>com.acme</groupId><artifactId>acme-site.ui.apps.structure</artifactId>
+            <version>${project.version}</version><type>zip</type>
+        </dependency>
+    </dependencies>
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.jackrabbit</groupId>
+                <artifactId>filevault-package-maven-plugin</artifactId>
+                <configuration>
+                    <packageType>application</packageType>
+                    <properties><cloudManagerTarget>none</cloudManagerTarget></properties>
+                    <repositoryStructurePackages>
+                        <repositoryStructurePackage>
+                            <groupId>com.acme</groupId><artifactId>acme-site.ui.apps.structure</artifactId>
+                        </repositoryStructurePackage>
+                    </repositoryStructurePackages>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.sling</groupId><artifactId>htl-maven-plugin</artifactId><version>2.0.4-1.4.0</version>
+                <executions>
+                    <execution>
+                        <goals><goal>validate</goal></goals>
+                        <configuration><sourceDirectory>${project.basedir}/src/main/content/jcr_root</sourceDirectory></configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

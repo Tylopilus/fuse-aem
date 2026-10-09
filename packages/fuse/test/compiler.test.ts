@@ -192,6 +192,7 @@ export default component$<typeof schema, { quotes: Promise<{ price: number }> }>
 
     const xml = generateDialogXml(schema as any);
     assert.ok(xml.includes('jcr:title="Accordion"'));
+    assert.ok(xml.includes('sling:resourceType="cq/gui/components/authoring/dialog"'));
     assert.ok(xml.includes('granite/ui/components/coral/foundation/form/textfield'));
     assert.ok(xml.includes('granite/ui/components/coral/foundation/form/checkbox'));
     assert.ok(xml.includes('granite/ui/components/coral/foundation/form/multifield'));

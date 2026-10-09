@@ -4,7 +4,8 @@
   "workspaces": ["packages/*", "examples/*"],
   "scripts": {
     "build": "npm run build -w @fuse-aem/fuse",
-    "test": "npm test -w @fuse-aem/fuse"
+    "test": "npm test -w @fuse-aem/fuse",
+    "test:browser": "npm run test:browser -w @fuse-aem/fuse"
   },
   "overrides": {
     "jsdom": "24.0.0"

@@ -232,7 +232,7 @@ public class StreamServlet extends SlingSafeMethodsServlet {
             ctx.endStream();
         }
         sink.write("<template data-fuse-r=\"" + escapeAttr(entry.getId()) + "\">"
-                + (html != null ? html : "") + "</template>");
+                + (html != null ? html : "") + "</template>" + readyMarker(entry.getId()));
         sink.flush();
     }
 
@@ -248,7 +248,11 @@ public class StreamServlet extends SlingSafeMethodsServlet {
     }
 
     static String errorTemplate(String id) {
-        return "<template data-fuse-r=\"" + escapeAttr(id) + "\" data-fuse-error></template>";
+        return "<template data-fuse-r=\"" + escapeAttr(id) + "\" data-fuse-error></template>" + readyMarker(id);
+    }
+
+    private static String readyMarker(String id) {
+        return "<template data-fuse-ready=\"" + escapeAttr(id) + "\"></template>";
     }
 
     private static String escapeAttr(String s) {

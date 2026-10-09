@@ -1,5 +1,5 @@
 /**
- * Fuse Client Loader (~2 KB)
+ * Fuse client loader.
  *
  * Provides Qwik-style resumability (no hydration, delegated lazy loading)
  * and out-of-order streaming resolution.
@@ -60,6 +60,9 @@ async function getOrCreateScope(host: HTMLElement): Promise<ComponentScope> {
   if (!chunkUrl) throw new Error('Element is not a Fuse host');
 
   const mod = await loadChunk(chunkUrl);
+  // Other events or visible tasks may have resumed this host while the import was pending.
+  scope = hostScopes.get(host);
+  if (scope) return scope;
   const meta = mod.$meta || { signals: [], props: [] };
 
   const sigs: Record<string, Signal> = {};
@@ -283,54 +286,54 @@ function setupVisibleTasks() {
 // Out-of-Order Streaming Resolution (<fuse-await> swap)
 // ------------------------------------------------------------------------------------------------
 
-function swapAwaitBlock(template: HTMLTemplateElement) {
+function swapAwaitBlock(template: HTMLTemplateElement): boolean {
   const id = template.getAttribute('data-fuse-r');
-  if (!id) return;
+  if (!id) return false;
 
   const isError = template.hasAttribute('data-fuse-error');
   const placeholder = document.getElementById(id);
+  // A nested block can complete before its parent inserts the placeholder.
+  if (!placeholder || placeholder.tagName.toLowerCase() !== 'fuse-await') return false;
 
-  if (placeholder && placeholder.tagName.toLowerCase() === 'fuse-await') {
-    if (isError) {
-      console.warn(`[fuse] Stream block #${id} failed or timed out`);
-      placeholder.setAttribute('data-fuse-failed', '');
-    } else {
-      const content = template.content;
-      // Replace fuse-await element with resolved template content
-      placeholder.parentNode?.replaceChild(content, placeholder);
-    }
+  if (isError) {
+    console.warn(`[fuse] Stream block #${id} failed or timed out`);
+    placeholder.setAttribute('data-fuse-failed', '');
+  } else {
+    placeholder.replaceWith(template.content);
   }
 
   // Remove the consumed template from DOM
   template.remove();
+  return true;
 }
 
 function setupStreamingSwap() {
+  const completed = new Set<string>();
   const processTemplates = () => {
-    const templates = document.querySelectorAll<HTMLTemplateElement>('template[data-fuse-r]');
-    for (const t of templates) {
-      swapAwaitBlock(t);
+    // This marker follows </template>, so the parser has received the entire block.
+    // Observing the opening template tag alone is unsafe across network boundaries.
+    for (const marker of document.querySelectorAll('template[data-fuse-ready]')) {
+      const id = marker.getAttribute('data-fuse-ready');
+      if (id) completed.add(id);
+      marker.remove();
     }
-  };
-
-  processTemplates();
-
-  const mo = new MutationObserver((mutations) => {
-    for (const m of mutations) {
-      for (const node of m.addedNodes) {
-        if (node instanceof HTMLTemplateElement && node.hasAttribute('data-fuse-r')) {
-          swapAwaitBlock(node);
-        } else if (node instanceof HTMLElement) {
-          const tpls = node.querySelectorAll<HTMLTemplateElement>('template[data-fuse-r]');
-          for (const t of tpls) {
-            swapAwaitBlock(t);
-          }
+    let changed: boolean;
+    do {
+      changed = false;
+      for (const template of document.querySelectorAll<HTMLTemplateElement>('template[data-fuse-r]')) {
+        const id = template.getAttribute('data-fuse-r')!;
+        // Completed documents also support HTML produced by older Fuse runtimes.
+        if ((completed.has(id) || document.readyState !== 'loading') && swapAwaitBlock(template)) {
+          completed.delete(id);
+          changed = true;
         }
       }
-    }
-  });
+    } while (changed);
+  };
 
+  const mo = new MutationObserver(processTemplates);
   mo.observe(document.documentElement, { childList: true, subtree: true });
+  processTemplates();
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', processTemplates);

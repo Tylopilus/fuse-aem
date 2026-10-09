@@ -398,15 +398,32 @@ class TemplateCompiler {
     }
     const e = toHtl(a, scope);
     if (e.reactive) throw FuseCompileError.at(a, 'A signal cannot be initialised from another signal.');
-    let type: ClientType = 'string';
-    if (ts.isPropertyAccessExpression(a) && ts.isIdentifier(a.expression)) {
-      const v = scope.get(a.expression.text);
-      const prop = a.name.text;
-      if (v?.kind === 'props') type = fieldClientType(v.fields?.[prop]);
-      if (v?.kind === 'model') type = v.types[prop] ?? 'string';
-    }
-    if (e.bool) type = 'boolean';
+    const type = e.bool ? 'boolean' : this.signalType(a, scope);
     return { ...base, htl: htlVar, initHtl: e.code, type };
+  }
+
+  private signalType(node: ts.Expression, scope: Scope): ClientType {
+    const n = unwrap(node);
+    if (ts.isNumericLiteral(n)) return 'number';
+    if (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) return 'string';
+    if (n.kind === ts.SyntaxKind.TrueKeyword || n.kind === ts.SyntaxKind.FalseKeyword) return 'boolean';
+    if (ts.isPrefixUnaryExpression(n)) return n.operator === ts.SyntaxKind.ExclamationToken ? 'boolean' : this.signalType(n.operand, scope);
+    if (ts.isPropertyAccessExpression(n) && ts.isIdentifier(n.expression)) {
+      const v = scope.get(n.expression.text);
+      if (v?.kind === 'props') return fieldClientType(v.fields?.[n.name.text]);
+      if (v?.kind === 'model') return v.types[n.name.text] ?? 'string';
+    }
+    const common = (a: ts.Expression, b: ts.Expression): ClientType => {
+      const left = this.signalType(a, scope);
+      const right = this.signalType(b, scope);
+      if (left !== right) throw FuseCompileError.at(n, 'Signal fallback and conditional values must have the same type so they can resume from HTML.');
+      return left;
+    };
+    if (ts.isConditionalExpression(n)) return common(n.whenTrue, n.whenFalse);
+    if (ts.isBinaryExpression(n) && (n.operatorToken.kind === ts.SyntaxKind.BarBarToken || n.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken)) {
+      return common(n.left, n.right);
+    }
+    return 'string';
   }
 
   private readStyles(call: ts.CallExpression): string {

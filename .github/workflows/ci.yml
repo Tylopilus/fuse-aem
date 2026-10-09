@@ -1,0 +1,35 @@
+name: Verify Fuse
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: npx playwright install --with-deps chromium --only-shell
+      - run: npm run test:browser
+      - run: npm run build -w @acme/acme-site
+      - run: mvn --batch-mode --no-transfer-progress verify
+      - uses: actions/upload-artifact@v4
+        with:
+          name: acme-site-package
+          path: examples/acme-site/all/target/*.zip

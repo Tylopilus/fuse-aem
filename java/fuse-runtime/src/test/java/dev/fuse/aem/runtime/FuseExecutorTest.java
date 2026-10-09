@@ -8,6 +8,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.lang.annotation.Annotation;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.junit.jupiter.api.Test;
 
@@ -66,5 +69,50 @@ class FuseExecutorTest {
         executor.activate(config(1, 10));
         executor.deactivate();
         assertEquals(caller, executor.supply(() -> Thread.currentThread().getName()).join());
+    }
+
+    @Test
+    void rejectsSaturatedPoolWithoutRunningSupplierOnCaller() throws Exception {
+        FuseExecutor executor = new FuseExecutor();
+        executor.activate(config(1, 5000));
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        try {
+            executor.supply(() -> {
+                started.countDown();
+                try { release.await(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+                return null;
+            });
+            assertTrue(started.await(2, TimeUnit.SECONDS));
+            for (int i = 0; i < 10; i++) executor.supply(() -> null);
+            AtomicBoolean ran = new AtomicBoolean();
+            CompletableFuture<Object> rejected = executor.supply(() -> { ran.set(true); return null; });
+            assertTrue(rejected.isCompletedExceptionally());
+            assertThrows(CompletionException.class, rejected::join);
+            assertEquals(false, ran.get());
+        } finally { release.countDown(); executor.deactivate(); }
+    }
+
+    @Test
+    void cancellingFutureInterruptsTheWorkerAndFreesCapacity() throws Exception {
+        FuseExecutor executor = new FuseExecutor();
+        executor.activate(config(1, 5000));
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch interrupted = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        try {
+            CompletableFuture<Object> pending = executor.supply(() -> {
+                started.countDown();
+                try { release.await(); } catch (InterruptedException e) {
+                    interrupted.countDown();
+                    Thread.currentThread().interrupt();
+                }
+                return null;
+            });
+            assertTrue(started.await(2, TimeUnit.SECONDS));
+            pending.cancel(true);
+            assertTrue(interrupted.await(2, TimeUnit.SECONDS));
+            assertEquals("next", executor.supply(() -> "next").get(2, TimeUnit.SECONDS));
+        } finally { release.countDown(); executor.deactivate(); }
     }
 }

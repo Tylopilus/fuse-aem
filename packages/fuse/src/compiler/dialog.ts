@@ -30,7 +30,7 @@ export function generateDialogXml(schema: SchemaJson): string {
     xmlns:nt="http://www.jcp.org/jcr/nt/1.0"
     jcr:primaryType="nt:unstructured"
     jcr:title="${title}"
-    sling:resourceType="cq/gui/components/coral/common/tabs/container">
+    sling:resourceType="cq/gui/components/authoring/dialog">
     <items jcr:primaryType="nt:unstructured">
         <tabs jcr:primaryType="nt:unstructured"
             sling:resourceType="granite/ui/components/coral/foundation/tabs"

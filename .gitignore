@@ -4,3 +4,8 @@ target/
 .DS_Store
 *.log
 .bnd/
+packages/examples/
+playwright-report/
+test-results/
+.env
+.env.*

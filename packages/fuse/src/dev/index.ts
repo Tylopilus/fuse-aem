@@ -392,7 +392,7 @@ ${componentsHtml}
         pending.splice(result.index, 1);
 
         if (result.error) {
-          res.write(`<template data-fuse-r="${result.item.id}" data-fuse-error></template>\n`);
+          res.write(`<template data-fuse-r="${result.item.id}" data-fuse-error></template><template data-fuse-ready="${result.item.id}"></template>\n`);
         } else {
           const compName = result.item.resourceType.split('/').pop()!;
           const resolvedHtml = await renderer.renderComponent(
@@ -401,7 +401,7 @@ ${componentsHtml}
             reqContext,
             { key: result.item.key, id: result.item.id, value: result.val },
           );
-          res.write(`<template data-fuse-r="${result.item.id}">${resolvedHtml}</template>\n`);
+          res.write(`<template data-fuse-r="${result.item.id}">${resolvedHtml}</template><template data-fuse-ready="${result.item.id}"></template>\n`);
         }
       }
     }

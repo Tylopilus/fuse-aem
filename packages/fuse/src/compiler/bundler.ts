@@ -1,6 +1,4 @@
 import * as esbuild from 'esbuild';
-import path from 'node:path';
-import fs from 'node:fs';
 import crypto from 'node:crypto';
 
 export interface BundleResult {
@@ -16,9 +14,6 @@ export async function bundleClientChunk(
   clientEntryCode: string,
   componentDir: string,
 ): Promise<BundleResult> {
-  const hash = crypto.createHash('sha256').update(clientEntryCode).digest('hex').slice(0, 8);
-  const chunkFileName = `${componentName}.${hash}.js`;
-
   const result = await esbuild.build({
     stdin: {
       contents: clientEntryCode,
@@ -34,6 +29,9 @@ export async function bundleClientChunk(
   });
 
   const chunkCode = result.outputFiles[0].text;
+  // Dependencies are part of the delivered content and must invalidate the URL too.
+  const hash = crypto.createHash('sha256').update(chunkCode).digest('hex').slice(0, 8);
+  const chunkFileName = `${componentName}.${hash}.js`;
   return { chunkFileName, chunkCode };
 }
 
