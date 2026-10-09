@@ -1,0 +1,10 @@
+{
+  "srcDir": "src/components",
+  "appsDir": "ui.apps/src/main/content/jcr_root/apps/acme/components",
+  "clientLibDir": "ui.apps/src/main/content/jcr_root/apps/acme/clientlibs/clientlib-fuse",
+  "clientLibUrl": "/etc.clientlibs/acme/clientlibs/clientlib-fuse/resources/chunks",
+  "coreDir": "core/src/main/java/com/acme/components",
+  "javaPackage": "com.acme.components",
+  "resourceTypePrefix": "acme/components",
+  "clientlibCategory": "acme.fuse"
+}

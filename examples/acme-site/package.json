@@ -1,0 +1,13 @@
+{
+  "name": "@acme/acme-site",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "fuse build",
+    "dev": "fuse dev"
+  },
+  "dependencies": {
+    "@fuse-aem/fuse": "*"
+  }
+}
